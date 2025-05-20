@@ -1,103 +1,106 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState } from "react";
+import PouchDB from "pouchdb";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [localDB, setLocalDB] = useState<any>(null);
+  const [docs, setDocs] = useState<any[]>([]);
+  const [name, setName] = useState("");
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  useEffect(() => {
+    (async () => {
+      const local = new PouchDB("localdb");
+      const remoteDB = new PouchDB('http://admin:password@localhost:5984/remotedb');
+  
+      local.sync(remoteDB, {
+        live: true,
+        retry: true,
+      });
+  
+      local
+        .changes({
+          since: "now",
+          live: true,
+          include_docs: true,
+        })
+        .on("change", () => {
+          fetchDocs(local);
+        });
+      setLocalDB(local);
+      fetchDocs(local);
+    })();
+  }, []);
+
+  const fetchDocs = async (db: any) => {
+    const result = await db.allDocs({ include_docs: true });
+    const list = result.rows.map((row: { doc: any; }) => row.doc);
+    // Ordena por data de criação, se quiser
+    setDocs(list.sort((a: { createdAt: number; }, b: { createdAt: number; }) => (a.createdAt < b.createdAt ? 1 : -1)));
+  };
+  
+  const handleDelete = async (id: string, rev: string) => {
+    if (!localDB) return;
+    await localDB.remove(id, rev);
+    fetchDocs(localDB);
+  };
+  const handleSubmit = async (e: any) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    await localDB.post({
+      name,
+      createdAt: new Date().toISOString(),
+    });
+    setName("");
+  };
+
+  return (
+    <main className="p-4 max-w-xl mx-auto">
+      <h1 className="text-xl font-bold mb-4">Sincronização com CouchDB</h1>
+      <form onSubmit={handleSubmit} className="flex gap-2 mb-6">
+        <input
+          type="text"
+          className="flex-1 border px-2 py-1 rounded"
+          placeholder="Digite um nome"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button
+          type="submit"
+          className="bg-blue-600 text-white px-4 rounded hover:bg-blue-700"
+        >
+          Adicionar
+        </button>
+      </form>
+
+      <ul className="space-y-2">
+        {docs.map((doc) => (
+          <li key={doc._id} className="border rounded p-2 flex items-center justify-between">
+        <div>
+          <input
+            type="text"
+            value={doc.name}
+            onChange={async (e) => {
+          const updatedName = e.target.value;
+          await localDB.put({
+            ...doc,
+            name: updatedName,
+          });
+          fetchDocs(localDB);
+            }}
+            className="border px-2 py-1 rounded w-full"
+          />
+          <small className="text-gray-500">{doc.createdAt}</small>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          onClick={() => handleDelete(doc._id, doc._rev)}
+          className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 ml-2"
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          Deletar
+        </button>
+          </li>
+        ))}
+      </ul>
+    </main>
   );
 }
